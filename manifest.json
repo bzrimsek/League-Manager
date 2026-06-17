@@ -1,0 +1,22 @@
+{
+  "name": "League Manager",
+  "short_name": "League",
+  "description": "Golf League Management PWA",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a2a1a",
+  "theme_color": "#1a2a1a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
