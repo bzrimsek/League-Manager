@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>League Manager — RSVP</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: #1a2a1a; color: #f0ede6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; }
+    .card { background: #f5f0e8; color: #1a2a1a; border-radius: 16px; padding: 24px; width: 100%; max-width: 420px; margin-bottom: 16px; }
+    .logo { font-family: 'Georgia', serif; font-size: 22px; font-weight: 700; color: #c9a84c; margin-bottom: 4px; text-align: center; letter-spacing: 1px; }
+    .subtitle { font-size: 13px; color: rgba(255,255,255,.6); text-align: center; margin-bottom: 20px; }
+    h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    .meta { font-size: 13px; color: #555; margin-bottom: 16px; line-height: 1.5; }
+    .msg { font-size: 14px; color: #333; margin-bottom: 20px; line-height: 1.6; white-space: pre-wrap; }
+    label { display: block; font-size: 13px; font-weight: 700; color: #555; margin-bottom: 4px; letter-spacing: .5px; }
+    select, input[type=text] { width: 100%; padding: 10px 12px; border: 1.5px solid #ccc; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; color: #1a2a1a; margin-bottom: 14px; }
+    .btn { display: block; width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; font-family: inherit; cursor: pointer; margin-bottom: 10px; transition: opacity .15s; }
+    .btn:active { opacity: .8; }
+    .btn-in  { background: #c9a84c; color: #1a2a1a; }
+    .btn-out { background: #e74c3c; color: #fff; }
+    .status-box { text-align: center; padding: 32px 16px; }
+    .status-icon { font-size: 48px; margin-bottom: 12px; }
+    .status-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .status-sub { font-size: 14px; color: #555; }
+    .loading { text-align: center; padding: 40px; color: rgba(255,255,255,.5); }
+    .error { color: #e74c3c; font-size: 14px; text-align: center; padding: 12px; }
+    .tee-label { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div class="logo">⛳ LEAGUE MANAGER</div>
+  <div class="subtitle">Player RSVP</div>
+  <div id="root"><div class="loading">Loading session…</div></div>
+
+<script>
+const FB = 'https://bzs-golf-apps-default-rtdb.firebaseio.com/bz-apps/league-manager';
+
+function qs(key) {
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+function fmt(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+}
+
+async function load() {
+  const sid = qs('s');
+  if (!sid) { show('error', 'No session ID in link.'); return; }
+
+  try {
+    const r = await fetch(`${FB}/state.json`);
+    if (!r.ok) throw new Error('Network error');
+    const state = await r.json();
+    if (!state) { show('error', 'No data found.'); return; }
+
+    // Find session
+    const sessions = state.sessions || [];
+    const sess = sessions.find(s => s.id === sid);
+    if (!sess) { show('error', 'Session not found. The link may have expired.'); return; }
+
+    // Find player by URL param
+    const pid = qs('p');
+    const players = state.players || [];
+    const player = pid ? players.find(p => p.id === pid) : null;
+
+    renderForm(state, sess, player, pid);
+  } catch(e) {
+    show('error', 'Could not load session. Check your connection and try again.');
+    console.error(e);
+  }
+}
+
+function renderForm(state, sess, player, pid) {
+  const existing = pid && sess.rsvp && sess.rsvp.players && sess.rsvp.players[pid];
+  const teeTimes = sess.teeTimes || state.league?.teeTimes || [];
+  const msg = state.config?.rsvpMsg || 'Please RSVP for the upcoming session.';
+
+  let html = `<div class="card">
+    <h2>${fmt(sess.date)}</h2>
+    <div class="meta">
+      ${sess.courseName || ''} ${sess.teeColor ? '· ' + sess.teeColor : ''}<br>
+      ${teeTimes.length ? 'Tee times: ' + teeTimes.join(', ') : ''}
+    </div>
+    <div class="msg">${msg.replace(/\{date\}/g, fmt(sess.date)).replace(/\{league\}/g, state.config?.leagueName||'')}</div>`;
+
+  if (player) {
+    html += `<div style="font-size:15px;font-weight:700;margin-bottom:16px;">👤 ${player.name}</div>`;
+  }
+
+  if (teeTimes.length > 1) {
+    html += `<label>EARLIEST TEE TIME I CAN MAKE</label>
+    <select id="earliest">
+      ${teeTimes.map(t => `<option value="${t}"${existing?.earliest===t?' selected':''}>${t}</option>`).join('')}
+    </select>`;
+  }
+
+  html += `<button class="btn btn-in" onclick="respond('in')">✅ I'm IN</button>
+    <button class="btn btn-out" onclick="respond('out')">❌ I'm OUT</button>
+  </div>`;
+
+  if (existing) {
+    html += `<div style="font-size:13px;color:rgba(255,255,255,.5);text-align:center;">
+      Current response: <strong style="color:#c9a84c">${existing.status?.toUpperCase() || '?'}</strong>
+    </div>`;
+  }
+
+  document.getElementById('root').innerHTML = html;
+  window._state = state;
+  window._sess = sess;
+  window._pid = pid;
+  window._sid = sess.id;
+}
+
+async function respond(status) {
+  const pid = window._pid;
+  const sid = window._sid;
+  if (!pid || !sid) { alert('Missing player or session ID.'); return; }
+
+  const earliest = document.getElementById('earliest')?.value || null;
+  const update = { status, earliest, ts: Date.now() };
+
+  try {
+    const r = await fetch(`${FB}/state/sessions.json`);
+    const sessions = await r.json() || [];
+    const idx = sessions.findIndex(s => s.id === sid);
+    if (idx < 0) { show('error', 'Session not found.'); return; }
+    if (!sessions[idx].rsvp) sessions[idx].rsvp = { players: {} };
+    sessions[idx].rsvp.players[pid] = update;
+
+    const wr = await fetch(`${FB}/state/sessions.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sessions)
+    });
+    if (!wr.ok) throw new Error('Write failed');
+
+    show(status === 'in' ? 'in' : 'out');
+  } catch(e) {
+    show('error', 'Could not save your response. Please try again.');
+    console.error(e);
+  }
+}
+
+function show(type, msg) {
+  const root = document.getElementById('root');
+  if (type === 'in') {
+    root.innerHTML = `<div class="card"><div class="status-box">
+      <div class="status-icon">✅</div>
+      <div class="status-title">You're IN!</div>
+      <div class="status-sub">See you on the course.</div>
+    </div></div>`;
+  } else if (type === 'out') {
+    root.innerHTML = `<div class="card"><div class="status-box">
+      <div class="status-icon">👋</div>
+      <div class="status-title">Got it — you're OUT.</div>
+      <div class="status-sub">We'll miss you this week.</div>
+    </div></div>`;
+  } else {
+    root.innerHTML = `<div class="card"><div class="status-box">
+      <div class="status-icon">⚠️</div>
+      <div class="status-title">Something went wrong</div>
+      <div class="status-sub error">${msg || 'Unknown error.'}</div>
+    </div></div>`;
+  }
+}
+
+load();
+</script>
+</body>
+</html>
